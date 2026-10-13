@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: |
+          uv venv --allow-existing .venv
+          uv pip install --python .venv/bin/python -e ".[dev]"
+      - run: make lint
+      - run: make test
+      - run: make eval
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t agentkit-enterprise .
+      - name: Smoke test
+        run: |
+          docker run --rm -e AGENTKIT_PROVIDER=mock agentkit-enterprise \
+            agentkit --user alice --role support_agent run "Send Jane an email" | tee out.txt
+          grep -q awaiting_approval out.txt

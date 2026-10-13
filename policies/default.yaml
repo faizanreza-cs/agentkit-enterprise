@@ -1,0 +1,18 @@
+# Who may do what. Unlisted tools are denied. Decisions: allow | approve | deny.
+roles:
+  support_agent:
+    "*": deny
+    search_customers: allow
+    get_orders: allow
+    create_ticket: allow
+    send_email: approve        # customer-facing: a manager signs off
+    refund_payment: deny       # agents never move money
+  support_manager:
+    "*": allow
+    refund_payment: approve    # still needs a second person
+  viewer:
+    "*": deny
+    search_customers: allow
+
+# Roles that can approve held tool calls (and never their own runs).
+approvers: [support_manager]
