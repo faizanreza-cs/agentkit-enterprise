@@ -1,8 +1,3 @@
-# agentkit-enterprise
-
-**A starter kit for AI agents that companies can actually approve for production.** Tool
-permissions by role, human approval for risky actions, PII redaction, a tamper-evident audit
-log, token budgets, tracing and evals, wired together and tested.
 
 [![CI](https://github.com/faizanreza-cs/agentkit-enterprise/actions/workflows/ci.yml/badge.svg)](https://github.com/faizanreza-cs/agentkit-enterprise/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
