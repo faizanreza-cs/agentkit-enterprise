@@ -73,6 +73,12 @@ class Agent:
         self.store = store
         self.settings = settings or get_settings()
         self.provider = provider or get_provider(settings=self.settings)
+        # a misspelled tool name would silently fall back to the role's "*" rule
+        unknown = (
+            {t for rules in policy.roles.values() for t in rules} - {"*"} - set(registry.tools)
+        )
+        if unknown:
+            raise ValueError(f"policy names unknown tools: {sorted(unknown)}")
 
     # ------------------------------------------------------------------ public
     def start(self, user_id: str, role: str, message: str) -> RunResult:
@@ -101,6 +107,7 @@ class Agent:
         approve: bool,
         note: str | None = None,
     ) -> RunResult:
+        note = redact(note)[0] if note else note
         a = self.store.approval(approval_id)
         run = self.store.load_run(a["run_id"])
         if a["status"] != "pending":
@@ -109,7 +116,8 @@ class Agent:
             raise PermissionError(f"role {approver_role!r} cannot approve")
         if approver_id == run["user_id"]:
             raise PermissionError("separation of duties: you cannot approve your own request")
-        self.store.decide_approval(approval_id, approve, approver_id, note)
+        if not self.store.decide_approval(approval_id, approve, approver_id, note):
+            raise ValueError(f"approval {approval_id} was already decided")
         self.store.audit(
             "approval_decided",
             approver_id,
@@ -122,6 +130,9 @@ class Agent:
                 "awaiting_approval",
                 pending_approvals=self.store.approvals("pending", a["run_id"]),
             )
+        # two approvers finishing at once: only one of them resumes the run
+        if not self.store.claim_run(a["run_id"]):
+            return RunResult(a["run_id"], "resuming")
         return self._resume(a["run_id"])
 
     # ------------------------------------------------------------------ loop
@@ -130,6 +141,7 @@ class Agent:
         state = run["state"]
         held = state.pop("held")
         decisions = {a["id"]: a for a in self.store.approvals(None, run_id)}
+        tracer = Tracer()
         results = []
         for item in held["calls"]:
             call = ToolCall(item["id"], item["name"], item["input"])
@@ -138,10 +150,11 @@ class Agent:
                 if a["status"] == "approved":
                     results.append(
                         self._execute(
-                            call, run_id, run["user_id"], state, Tracer(), decision="approved"
+                            call, run_id, run["user_id"], state, tracer, decision="approved"
                         )
                     )
                 else:
+                    state["tool_calls"].append({"tool": call.name, "decision": "denied"})
                     results.append(
                         self._result(
                             call, {"error": "denied by approver", "note": a.get("note")}, True
@@ -149,6 +162,7 @@ class Agent:
                     )
             else:
                 results.append(item["result"])
+        state["trace"] += tracer.export()
         state["messages"].append({"role": "user", "content": results})
         return self._loop(run_id, run["user_id"], run["role"], state)
 
@@ -167,7 +181,7 @@ class Agent:
                     "llm_call", "agent", {"stop_reason": turn.stop_reason, **turn.usage}, run_id
                 )
                 if turn.stop_reason == "refusal":
-                    status, answer = "completed", turn.text
+                    status, answer = "completed", redact(turn.text)[0]
                     break
                 state["messages"].append({"role": "assistant", "content": turn.content})
                 if not turn.tool_calls:
@@ -225,7 +239,7 @@ class Agent:
             status, answer = "failed", f"{type(e).__name__}: {e}"
         state["trace"] += tracer.export()
         self.store.save_run(run_id, user_id, role, status, state)
-        self.store.audit("run_finished", "agent", {"status": status}, run_id)
+        self.store.audit("run_finished", "agent", {"status": status, "answer": answer}, run_id)
         return RunResult(
             run_id, status, answer, [], state["tool_calls"], state["usage"], state["trace"]
         )
@@ -259,6 +273,7 @@ class Agent:
         try:
             tool = self.registry.get(call.name)
         except KeyError:
+            self.store.audit("tool_unknown", "agent", {"tool": call.name}, run_id)
             return self._result(call, {"error": f"unknown tool {call.name}"}, True)
         try:
             args = tool.validate(call.input)
@@ -271,15 +286,18 @@ class Agent:
         payload: dict[str, Any]
         is_error = False
         with tracer.span(f"tool:{call.name}", risk=tool.risk) as sp:
-            for attempt in range(tool.retries + 1):
+            # a timed-out call may still finish, so never retry side effects (high-risk tools)
+            for attempt in range((0 if tool.risk == "high" else tool.retries) + 1):
+                fut = _pool.submit(tool.fn, args)
                 try:
-                    payload = _pool.submit(tool.fn, args).result(timeout=tool.timeout_s)
+                    payload = fut.result(timeout=tool.timeout_s)
                     is_error = False
                     break
                 except ToolError as e:  # expected failure: tell the model, don't retry
                     payload, is_error = {"error": str(e)}, True
                     break
                 except FutureTimeout:
+                    fut.cancel()  # only stops it if it hasn't started yet
                     payload, is_error = {"error": f"timed out after {tool.timeout_s}s"}, True
                 except Exception as e:  # transient: retry, then report
                     payload, is_error = {"error": f"{type(e).__name__}: {e}"}, True

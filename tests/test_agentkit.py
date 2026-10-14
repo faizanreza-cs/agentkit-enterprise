@@ -48,6 +48,11 @@ def test_redacts_common_pii():
     assert "example.com" not in red and "4242" not in red and "6789" not in red
 
 
+def test_redacts_local_phones_and_card_followed_by_cvv():
+    red, _ = redact("call (415) 555-0134 or 415-555-0134, card 4242 4242 4242 4242 123")
+    assert "555" not in red and "4242" not in red
+
+
 def test_luhn_and_ssn_checks_avoid_false_positives():
     assert not find("order 1234 5678 9012 3456")  # fails Luhn
     assert not find("ref 000-12-3456")  # invalid SSN area
@@ -82,7 +87,8 @@ def test_policy_rejects_typos():
 def test_audit_chain_detects_tampering(store):
     for i in range(3):
         store.audit("e", "u", {"i": i})
-    assert store.verify() == {"ok": True, "records": 3, "broken_at": None}
+    v = store.verify()
+    assert v["ok"] and v["records"] == 3 and v["broken_at"] is None
     store.con.execute("UPDATE audit SET data = '{\"i\": 99}' WHERE seq = 2")
     assert store.verify()["broken_at"] == 2
 
@@ -90,8 +96,26 @@ def test_audit_chain_detects_tampering(store):
 def test_audit_chain_detects_deletion(store):
     for i in range(3):
         store.audit("e", "u", {"i": i})
+    head = store.verify()["head"]
     store.con.execute("DELETE FROM audit WHERE seq = 2")
     assert not store.verify()["ok"]
+    # deleting the newest rows leaves a valid but shorter chain: the saved head catches it
+    store.con.execute("DELETE FROM audit WHERE seq = 3")
+    assert store.verify()["head"] != head
+
+
+def test_approval_and_resume_can_only_be_claimed_once(store):
+    aid = store.create_approval("r1", "send_email", {}, "alice")
+    store.save_run("r1", "alice", "support_agent", "awaiting_approval", {})
+    assert store.decide_approval(aid, True, "bob", None)
+    assert not store.decide_approval(aid, True, "carol", None)  # lost the race
+    assert store.claim_run("r1") and not store.claim_run("r1")
+
+
+def test_policy_naming_unknown_tool_is_rejected(store):
+    pol = Policy.from_dict({"roles": {"m": {"*": "allow", "refund_paymnt": "approve"}}})
+    with pytest.raises(ValueError, match="refund_paymnt"):
+        Agent(support.registry, pol, store, MockPlanner(), Settings())
 
 
 # ---------------------------------------------------------------- agent flows
@@ -125,8 +149,11 @@ def test_approval_flow_with_separation_of_duties(agent, store):
 def test_denied_approval_is_reported_to_model(agent):
     support.OUTBOX.clear()
     res = agent.start("alice", "support_agent", "Send Ravi an email")
-    done = agent.decide(res.pending_approvals[0]["id"], "bob", "support_manager", False, "no")
+    aid = res.pending_approvals[0]["id"]
+    done = agent.decide(aid, "bob", "support_manager", False, "no, ask ravi.k@example.org")
     assert done.status == "completed" and "denied" in done.answer and not support.OUTBOX
+    assert {"tool": "send_email", "decision": "denied"} in done.tool_calls
+    assert "example.org" not in json.dumps(agent.store.audit_log(res.run_id))
 
 
 def test_hidden_tools_cannot_run(agent):
@@ -235,6 +262,14 @@ def test_tool_timeout_and_retry(store):
         time.sleep(0.5)
         return {"ok": True}
 
+    risky_runs = []
+
+    @reg.tool(description="slow side effect", risk="high", timeout_s=0.05)
+    def risky(args: Args) -> dict:
+        time.sleep(0.1)
+        risky_runs.append(1)
+        return {"ok": True}
+
     @reg.tool(description="expected failure")
     def nope(args: Args) -> dict:
         raise ToolError("not found")
@@ -243,7 +278,7 @@ def test_tool_timeout_and_retry(store):
         def complete(self, system, messages, tools):
             self.n += 1
             if self.n == 1:
-                cs = [ToolCall(n, n, {}) for n in ("flaky", "slow", "nope")]
+                cs = [ToolCall(n, n, {}) for n in ("flaky", "slow", "nope", "risky")]
                 return Turn(
                     "",
                     cs,
@@ -255,7 +290,10 @@ def test_tool_timeout_and_retry(store):
     pol = Policy.from_dict({"roles": {"r": {"*": "allow"}}})
     res = Agent(reg, pol, store, Calls(), Settings()).start("u", "r", "go")
     errs = {c["tool"]: c["error"] for c in res.tool_calls}
-    assert errs == {"flaky": False, "slow": True, "nope": True} and calls["n"] == 2
+    assert errs == {"flaky": False, "slow": True, "nope": True, "risky": True}
+    assert calls["n"] == 2
+    time.sleep(0.2)
+    assert len(risky_runs) == 1  # a timed-out high-risk call is never retried
     assert any(s["name"] == "tool:slow" for s in res.trace)
 
 

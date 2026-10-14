@@ -39,9 +39,12 @@ class Detector:
 
 DETECTORS = [
     Detector("EMAIL", re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")),
-    Detector("CARD", re.compile(r"\b(?:\d[ -]?){13,19}\b"), _luhn),
+    # lazy: "card + CVV" matches the 16-digit card, not one 19-digit run that fails Luhn
+    Detector("CARD", re.compile(r"\b\d(?:[ -]?\d){12,18}?\b"), _luhn),
     Detector("SSN", re.compile(r"\b\d{3}-\d{2}-\d{4}\b"), _ssn_ok),
-    Detector("PHONE", re.compile(r"(?<!\w)\+?\d{1,2}[ .-]?\(?\d{3}\)?[ .-]?\d{3}[ .-]?\d{4}\b")),
+    Detector(
+        "PHONE", re.compile(r"(?<!\w)(?:\+?\d{1,2}[ .-]?)?\(?\d{3}\)?[ .-]?\d{3}[ .-]?\d{4}\b")
+    ),
     Detector("IBAN", re.compile(r"\b[A-Z]{2}\d{2}(?: ?[A-Z0-9]{4}){3,7}(?: ?[A-Z0-9]{1,3})?\b")),
 ]
 

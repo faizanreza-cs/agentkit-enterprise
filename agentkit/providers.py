@@ -202,6 +202,14 @@ class OpenAIProvider:
             tool_calls=calls,
             stop_reason="tool_use" if calls else "end_turn",
             content=content,
+            usage=(
+                {
+                    "input_tokens": resp.usage.prompt_tokens,
+                    "output_tokens": resp.usage.completion_tokens,
+                }
+                if resp.usage
+                else {}
+            ),
         )
 
 

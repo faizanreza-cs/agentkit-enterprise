@@ -16,7 +16,7 @@ kit answers their questions up front:
 | *Who can make the agent do what?* | YAML policy per role: each tool is `allow`, `approve` or `deny`, default-deny. Denied tools are hidden from the model **and** blocked at execution, even if the model calls them anyway |
 | *Can it email customers or move money on its own?* | High-risk tools pause the run until an approver decides. **Separation of duties:** you can't approve your own request |
 | *Does customer data go to the LLM?* | Emails, phones, cards (Luhn-checked) and SSNs are masked before reaching the model, logs or answers. Tools take customer ids and resolve contact details themselves |
-| *Can we prove what happened?* | Every message, tool call, approval and decision goes to a **hash-chained audit log**. Editing or deleting any record breaks the chain, and `verify()` finds it |
+| *Can we prove what happened?* | Every message, tool call, approval and decision goes to a **hash-chained audit log**. Editing or deleting any record breaks the chain, and `verify()` finds it. Ship the `head` hash it returns to your log store, so deleting the newest records is caught too |
 | *What stops a runaway loop or a surprise bill?* | Step limits, per-run token budget, per-user daily budget, per-tool timeouts and retries |
 | *How do we know it behaves?* | A governance eval checks *actions*, not just words: approvals held, denied tools never ran, no raw PII in the model context |
 
@@ -102,10 +102,12 @@ make api
 
 ## Tests and evals
 
-- **17 tests.** Redaction, including checksum false-positive guards. Policy default-deny and
-  typo rejection. Audit-chain tamper and deletion detection. The approval flow with
-  separation of duties. A rogue model calling a tool it was never offered. Invalid arguments.
-  Runaway-loop budgets. Tool timeout and retry. The full API with role checks.
+- **20 tests.** Redaction, including checksum false-positive guards. Policy default-deny,
+  typo rejection and unknown tool names. Audit-chain tamper and deletion detection. The
+  approval flow with separation of duties, and approvals that can only be decided and resumed
+  once. A rogue model calling a tool it was never offered. Invalid arguments. Runaway-loop
+  budgets. Tool timeout and retry, and timed-out high-risk tools that are never retried. The
+  full API with role checks.
 - **Governance eval** (`make eval`). Eight tasks across three roles, scored on what actually
   executed. 8/8 with the mock planner; run `make eval-llm` to score a real model under the
   same rules.

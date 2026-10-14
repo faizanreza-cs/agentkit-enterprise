@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
@@ -53,7 +53,6 @@ def health() -> dict[str, Any]:
         "status": "ok",
         "provider": a.provider.name,
         "tools": list(a.registry.tools),
-        "audit": a.store.verify(),
     }
 
 
@@ -103,10 +102,12 @@ def decide(approval_id: str, d: Decision, who: Who) -> dict[str, Any]:
 
 
 @app.get("/audit")
-def audit(who: Who, run_id: str | None = None) -> dict[str, Any]:
+def audit(
+    who: Who, run_id: str | None = None, limit: int = Query(200, ge=1, le=5000)
+) -> dict[str, Any]:
     if not agent().policy.can_approve(who.role):
         raise HTTPException(403, "audit log is restricted")
-    return {"verify": agent().store.verify(), "events": agent().store.audit_log(run_id)}
+    return {"verify": agent().store.verify(), "events": agent().store.audit_log(run_id, limit)}
 
 
 @app.get("/", response_class=HTMLResponse)

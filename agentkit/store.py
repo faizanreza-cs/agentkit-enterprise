@@ -2,6 +2,8 @@
 
 Audit records are hash-chained: each row stores sha256(previous_hash + canonical JSON of the
 event). Editing or deleting any row breaks every hash after it, which `verify()` detects.
+Deleting the newest rows leaves a shorter valid chain, so keep the `head` that `verify()`
+returns somewhere outside this database (a log shipper, a WORM bucket) and compare against it.
 """
 
 from __future__ import annotations
@@ -78,27 +80,43 @@ class Store:
 
     # ------------------------------------------------------------------ audit
     def audit(self, event: str, actor: str, data: dict[str, Any], run_id: str | None = None) -> str:
+        # the lock covers threads; BEGIN IMMEDIATE covers other processes (CLI + API)
         with self._lock:
-            row = self.con.execute("SELECT hash FROM audit ORDER BY seq DESC LIMIT 1").fetchone()
-            prev = row["hash"] if row else GENESIS
-            record = {"ts": now(), "run_id": run_id, "actor": actor, "event": event, "data": data}
-            h = _hash(prev, record)
-            self.con.execute(
-                "INSERT INTO audit (ts, run_id, actor, event, data, prev_hash, hash)"
-                " VALUES (?,?,?,?,?,?,?)",
-                (record["ts"], run_id, actor, event, json.dumps(data, default=str), prev, h),
-            )
+            self.con.execute("BEGIN IMMEDIATE")
+            try:
+                row = self.con.execute(
+                    "SELECT hash FROM audit ORDER BY seq DESC LIMIT 1"
+                ).fetchone()
+                prev = row["hash"] if row else GENESIS
+                record = {
+                    "ts": now(),
+                    "run_id": run_id,
+                    "actor": actor,
+                    "event": event,
+                    "data": data,
+                }
+                h = _hash(prev, record)
+                self.con.execute(
+                    "INSERT INTO audit (ts, run_id, actor, event, data, prev_hash, hash)"
+                    " VALUES (?,?,?,?,?,?,?)",
+                    (record["ts"], run_id, actor, event, json.dumps(data, default=str), prev, h),
+                )
+                self.con.execute("COMMIT")
+            except BaseException:
+                self.con.execute("ROLLBACK")
+                raise
             return h
 
-    def audit_log(self, run_id: str | None = None) -> list[dict[str, Any]]:
+    def audit_log(self, run_id: str | None = None, limit: int = 1000) -> list[dict[str, Any]]:
+        """The newest `limit` events (of one run, if given), oldest first."""
         sql, params = "SELECT * FROM audit", ()
         if run_id:
             sql, params = sql + " WHERE run_id = ?", (run_id,)  # type: ignore[assignment]
-        rows = self.con.execute(sql + " ORDER BY seq", params).fetchall()
-        return [{**dict(r), "data": json.loads(r["data"])} for r in rows]
+        rows = self.con.execute(sql + " ORDER BY seq DESC LIMIT ?", (*params, limit)).fetchall()
+        return [{**dict(r), "data": json.loads(r["data"])} for r in reversed(rows)]
 
     def verify(self) -> dict[str, Any]:
-        """Recompute the chain. Returns {"ok": bool, "records": n, "broken_at": seq | None}."""
+        """Recompute the chain: {"ok", "records", "broken_at": seq | None, "head": last hash}."""
         prev, n = GENESIS, 0
         for r in self.con.execute("SELECT * FROM audit ORDER BY seq"):
             n += 1
@@ -110,9 +128,9 @@ class Store:
                 "data": json.loads(r["data"]),
             }
             if r["prev_hash"] != prev or _hash(prev, record) != r["hash"]:
-                return {"ok": False, "records": n, "broken_at": r["seq"]}
+                return {"ok": False, "records": n, "broken_at": r["seq"], "head": None}
             prev = r["hash"]
-        return {"ok": True, "records": n, "broken_at": None}
+        return {"ok": True, "records": n, "broken_at": None, "head": prev}
 
     # ------------------------------------------------------------------ runs
     def save_run(
@@ -144,11 +162,23 @@ class Store:
         )
         return aid
 
-    def decide_approval(self, aid: str, approved: bool, by: str, note: str | None) -> None:
-        self.con.execute(
-            "UPDATE approvals SET status=?, decided_by=?, note=?, decided_at=? WHERE id=?",
+    def decide_approval(self, aid: str, approved: bool, by: str, note: str | None) -> bool:
+        """Record a decision. False if someone else decided first."""
+        cur = self.con.execute(
+            "UPDATE approvals SET status=?, decided_by=?, note=?, decided_at=?"
+            " WHERE id=? AND status='pending'",
             ("approved" if approved else "denied", by, note, now(), aid),
         )
+        return cur.rowcount == 1
+
+    def claim_run(self, run_id: str) -> bool:
+        """Move a held run to 'resuming'. Only the first caller gets True."""
+        cur = self.con.execute(
+            "UPDATE runs SET status='resuming', updated_at=? WHERE id=?"
+            " AND status='awaiting_approval'",
+            (now(), run_id),
+        )
+        return cur.rowcount == 1
 
     def approvals(self, status: str | None = "pending", run_id: str | None = None) -> list[dict]:
         clauses, params = [], []
@@ -163,10 +193,10 @@ class Store:
         return [{**dict(r), "args": json.loads(r["args"])} for r in rows]
 
     def approval(self, aid: str) -> dict[str, Any]:
-        rows = [a for a in self.approvals(None) if a["id"] == aid]
-        if not rows:
+        r = self.con.execute("SELECT * FROM approvals WHERE id = ?", (aid,)).fetchone()
+        if r is None:
             raise KeyError(aid)
-        return rows[0]
+        return {**dict(r), "args": json.loads(r["args"])}
 
     # ------------------------------------------------------------------ usage
     def add_usage(self, user_id: str, tokens: int) -> int:
