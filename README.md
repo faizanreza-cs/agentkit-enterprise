@@ -11,8 +11,8 @@
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2)](https://www.linkedin.com/in/YOUR-LINKEDIN-ID)
-[![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/cs_faizan)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2)](https://www.linkedin.com/in/faizanreza)
+[![X](https://img.shields.io/badge/Follow-000000?logo=x&logoColor=white)](https://x.com/cs_faizan)
 
 </div>
 
