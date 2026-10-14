@@ -1,8 +1,22 @@
-## ⚡ Overview
+<div align="center">
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/logo-dark.svg">
+  <img src="docs/img/logo.svg" alt="AgentKit Enterprise" height="100">
+</picture>
+
+<p><em>A starter kit for internal AI agents that security teams can sign off: role policies, human approvals, PII redaction and a tamper-evident audit log.</em></p>
 
 [![CI](https://github.com/faizanreza-cs/agentkit-enterprise/actions/workflows/ci.yml/badge.svg)](https://github.com/faizanreza-cs/agentkit-enterprise/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![License](https://img.shields.io/badge/license-MIT-green)
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-0A66C2)](https://www.linkedin.com/in/YOUR-LINKEDIN-ID)
+[![X](https://img.shields.io/badge/X-Follow-000000?logo=x&logoColor=white)](https://x.com/YOUR_X_HANDLE)
+
+</div>
+
+## ⚡ Overview
 
 Most agent demos call tools freely. Security and compliance teams block those in review. This
 kit answers their questions up front:
@@ -110,29 +124,6 @@ make api
 
 Writing the tests caught a real bug: a tool that failed once and then succeeded on retry was
 still reported as an error. It's fixed, and a test covers it.
-
-```
-agentkit/
-  agent.py      governed loop: policy, approvals, budgets, audit, tracing
-  tools.py      registry + Pydantic validation
-  policy.py     YAML role policy, approvers
-  redact.py     PII detectors (Luhn / SSN checks) + nested redaction
-  store.py      SQLite: hash-chained audit, runs, approvals, usage
-  tracing.py    spans per run
-  providers.py  Anthropic / OpenAI / mock behind one interface
-  api.py · cli.py
-  examples/     support-desk tools + scripted mock planner
-policies/default.yaml
-ui/index.html   operator console (no build step)
-```
-
-## Building an internal agent?
-
-I help teams take agents from demo to production: support desks, finance ops, IT
-automation, sales ops. That means connecting the real systems (CRM, ERP, ticketing, email),
-writing the policies with your security team, and setting up evals so you know it behaves.
-
-**Faizan Reza**, AI engineer · [GitHub](https://github.com/faizanreza-cs) · faizanreza01@gmail.com
 
 ## License
 
