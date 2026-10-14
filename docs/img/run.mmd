@@ -1,0 +1,13 @@
+flowchart TB
+    U[User message<br/>PII redacted] --> L[LLM<br/>sees only the tools the role may use]
+    L -->|tool call| P{{Policy<br/>role × tool}}
+    P -->|allow| R[Validate args → run<br/>timeout, retry → redact output]
+    P -->|approve| Q[Paused: awaiting approval]
+    Q -->|approved by someone<br/>other than the requester| R
+    Q -->|denied| N
+    P -->|deny| N[Not run<br/>model told: not permitted]
+    R & N --> B[Result back to the LLM]
+    B -->|next step| L
+    B --> F[Final answer]
+    F ~~~ S[Every step: budgets checked · every event → audit chain · spans → trace]
+    style S stroke-dasharray: 4 3

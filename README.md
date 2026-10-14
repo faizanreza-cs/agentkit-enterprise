@@ -34,31 +34,12 @@ kit answers their questions up front:
 
 ## How a run works
 
-```mermaid
-sequenceDiagram
-    participant U as User (role)
-    participant A as Agent loop
-    participant L as LLM
-    participant P as Policy
-    participant T as Tool
-    participant Q as Approver
-    U->>A: message (PII redacted)
-    A->>L: messages + tools visible to role
-    L-->>A: tool call
-    A->>P: decide(role, tool)
-    alt allow
-        A->>T: validate args → run (timeout, retry) → redact output
-    else approve
-        A-->>U: awaiting_approval
-        Q->>A: approve / deny (not the requester)
-        A->>T: run if approved
-    else deny
-        A-->>L: "policy: not permitted"
-    end
-    A->>L: tool results
-    L-->>A: final answer
-    Note over A: budgets checked each step · every event → audit chain · spans → trace
-```
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/run-dark.png">
+  <img src="docs/img/run.png" alt="How an agentkit run works" width="615">
+</picture>
+</p>
 
 ## Quickstart
 
