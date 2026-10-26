@@ -3,8 +3,7 @@ PY ?= .venv/bin/python
 .PHONY: setup test lint eval eval-llm api docker
 
 setup:
-	uv venv --allow-existing .venv
-	uv pip install --python $(PY) -e ".[dev]"
+	uv sync --locked --extra dev
 
 test:
 	$(PY) -m pytest

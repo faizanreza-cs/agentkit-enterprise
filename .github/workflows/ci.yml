@@ -13,9 +13,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install
-        run: |
-          uv venv --allow-existing .venv
-          uv pip install --python .venv/bin/python -e ".[dev]"
+        run: uv sync --locked --extra dev
       - run: make lint
       - run: make test
       - run: make eval
