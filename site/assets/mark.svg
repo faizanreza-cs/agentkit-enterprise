@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="20 20 160 160" width="160" height="160"><title>AgentKit Enterprise</title>
+  <g transform="translate(20 20)">
+    <defs>
+      <linearGradient id="g" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="160" y2="160">
+        <stop offset="0" stop-color="#475569" />
+        <stop offset="1" stop-color="#0F172A" />
+      </linearGradient>
+    </defs>
+    <rect width="160" height="160" rx="38" fill="url(#g)" />
+    <g fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M80 16 L130 34 V76 C130 110 108 130 80 144 C52 130 30 110 30 76 V34 Z" />
+      <path d="M80 56 L58 96 M80 56 L102 96 M58 96 H102" stroke-width="6" />
+      <circle cx="80" cy="56" r="9" fill="#fff" stroke="none" />
+      <circle cx="58" cy="96" r="9" fill="#fff" stroke="none" />
+      <circle cx="102" cy="96" r="9" fill="#fff" stroke="none" />
+    </g>
+  </g>
+  </svg>
