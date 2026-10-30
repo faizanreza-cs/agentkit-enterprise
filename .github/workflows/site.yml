@@ -1,0 +1,49 @@
+name: Website
+
+# GitHub Pages serves the gh-pages branch; this copies site/ there whenever it changes on main.
+on:
+  push:
+    branches: [main]
+    paths: ["site/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pages: write
+
+concurrency:
+  group: website
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Copy site/ to the gh-pages branch
+        id: copy
+        run: |
+          name=$(git log -1 --format=%an); email=$(git log -1 --format=%ae)
+          if git fetch --depth 1 origin gh-pages; then
+            git worktree add --detach ../pages FETCH_HEAD
+          else
+            git worktree add --detach ../pages && git -C ../pages checkout --orphan gh-pages
+          fi
+          cd ../pages
+          git rm -rq --ignore-unmatch .
+          cp -r "$GITHUB_WORKSPACE/site/." .
+          touch .nojekyll
+          git add -A
+          if git diff --cached --quiet; then
+            echo "site/ is already published"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git -c user.name="$name" -c user.email="$email" commit -q -m "Publish the website (site/ at ${GITHUB_SHA::7})"
+          git push origin HEAD:gh-pages
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+      - name: Ask GitHub Pages to rebuild
+        if: steps.copy.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X POST "repos/$GITHUB_REPOSITORY/pages/builds" || echo "Pages will rebuild on its own"
